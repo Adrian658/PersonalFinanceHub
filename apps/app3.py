@@ -145,7 +145,7 @@ def create_historical_data_graph(ticker, recommendation_df):
     historical_data.index = pd.to_datetime(historical_data.index)
     recommendation_df = recommendation_df[recommendation_df['recommend_date'] >= start_date]
 
-    historical_price_fig = go.Figure()
+    historical_price_fig = go.Figure(layout={'height': 600})
     historical_price_fig.add_trace(go.Scatter(
                                             x=historical_data.index, 
                                             y=historical_data['Close'],
