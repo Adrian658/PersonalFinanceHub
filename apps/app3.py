@@ -8,6 +8,8 @@ from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 from dash.dash import no_update
 
+import bs4
+
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import plotly
@@ -146,6 +148,7 @@ def create_historical_data_graph(ticker, recommendation_df):
     recommendation_df = recommendation_df[recommendation_df['recommend_date'] >= start_date]
 
     historical_price_fig = go.Figure(layout={'height': 600})
+    historical_price_fig.layout.xaxis.range = (historical_data.index[0], historical_data.index[-1])
     historical_price_fig.add_trace(go.Scatter(
                                             x=historical_data.index, 
                                             y=historical_data['Close'],
@@ -154,26 +157,49 @@ def create_historical_data_graph(ticker, recommendation_df):
                                             x=recommendation_df['recommend_date'], 
                                             y=historical_data.loc[recommendation_df['recommend_date']]['Close'],
                                             mode='markers', name="Recommendations",
-                                            marker=dict(size=20)))
-
+                                            marker=dict(size=10)))
+    
     historical_price_fig.update_xaxes(
-        rangeslider_visible=True,
+        rangeslider_visible=False,
+        fixedrange=True,
         rangeselector=dict(
             buttons=list([
                 dict(count=1, label="1m", step="month", stepmode="backward"),
                 dict(count=6, label="6m", step="month", stepmode="backward"),
                 dict(count=1, label="YTD", step="year", stepmode="todate"),
                 dict(count=1, label="1y", step="year", stepmode="backward"),
-                dict(step="all")
+                dict(count=3, label="3y", step="year", stepmode="backward"),
+                dict(count=5, label="5y", step="year", stepmode="backward"),
+                dict(count=10, label="10y", step="year", stepmode="backward")
+                #dict(step="all")
             ])
-        )
+        )        
     )
+
+    historical_price_fig.update_layout(hovermode='x unified')
+    
+
+    
 
     return historical_price_fig, company
 
 # Finds the triggering element's id
 def find_trigger_id():
+    #print(dash.callback_context.triggered)
     return dash.callback_context.triggered[0]['prop_id'].split('.')[0]
+
+# Convert html to list of dash components
+def convert_html_to_dash(element):
+    if type(element) == bs4.element.NavigableString:
+        return str(element)
+    else:
+        name = element.name
+        contents = [convert_html_to_dash(x) for x in element.contents if type(element) != bs4.element.Comment]
+
+        try:
+            return getattr(html,name.title())(contents)
+        except:
+            return contents
 
 
 ### DASH CALLBACKS FUNCTIONS ###
@@ -191,6 +217,7 @@ def update_recommendations_data(collection_name):
     collection_data = mongo_query('investment-db', collection_name)
     df = pd.DataFrame(collection_data).drop('_id', axis=1)
     df = df[df['recommend_date'] > '2015-01-01']
+    df = df.sort_values('recommend_date', ascending=False)
 
     # Store counts df so as to not recompute when slider is updated?
     counts = df['ticker'].value_counts()
@@ -203,9 +230,10 @@ def update_recommendations_data(collection_name):
 #          Range slider display values
 @app.callback(
     [Output('recommendations-graph', 'figure'), Output('recommendation-count-slider-values', 'children')],
-    [Input('recommendation-count-slider', 'value'), Input('recommendations-df', 'data')]
+    [Input('recommendation-count-slider', 'value'), Input('recommendations-df', 'data')],
+    [State('recommendations-graph', 'figure')]
 )
-def update_recommendations_graph(slider_value, data):
+def update_recommendations_graph(slider_value, data, recommendations_graph):
 
     # Get current slider values and filter recommendations by count
     max_selected = slider_value[1]
@@ -222,6 +250,9 @@ def update_recommendations_graph(slider_value, data):
         },
         height=800
     )
+
+    if find_trigger_id() == 'recommendation-count-slider':
+        fig.layout.xaxis.range = recommendations_graph['layout']['xaxis']['range']
 
     return fig, 'Number of recommendations  -  Min: %s, Max: %s' % (min_selected, max_selected)
 
@@ -241,17 +272,17 @@ def update_selected_recommendation(selected_g1, selected_g2):
     trigger_id = find_trigger_id()
 
     # Lambda to extract selection variables
-    extract_selection = lambda x: (x['points'][0]['y'], x['points'][0]['x'])
+    extract_selection = lambda x, idx: (x['points'][idx]['y'], x['points'][idx]['x'])
 
     # Triggering element is recommendations-graph
     # Update both the ticker and recommendation date
     if trigger_id == 'recommendations-graph':
-        ticker, rec_date = extract_selection(selected_g1)
+        ticker, rec_date = extract_selection(selected_g1, 0)
         return_tuple = (ticker, rec_date)
     # Triggering element is historical-price-graph
     # Only update the recommendation date
     else:
-        icker, rec_date = extract_selection(selected_g2)
+        ticker, rec_date = extract_selection(selected_g2, 1)
         return_tuple = (no_update, rec_date)
 
     return return_tuple
@@ -270,7 +301,7 @@ def edit_recommendation(ticker, rec_date, data):
 
     # Do not proceed if callback is made during bootup
     if not ticker:
-        print("Preventing Update", rec_date)
+        #print("Preventing Update", rec_date)
         raise PreventUpdate
     
     # Find trigger id
@@ -283,6 +314,9 @@ def edit_recommendation(ticker, rec_date, data):
     promotion, description, url = recommendation['promotion'], \
                                     recommendation['description'], \
                                     recommendation['url']
+
+    # Convert the html description to dash components
+    description = convert_html_to_dash(bs4.BeautifulSoup(description, features="lxml").contents[0].contents[0])
 
     # Set default no update for recommendation independent variables
     recommendation_graph, company_name = no_update, no_update 

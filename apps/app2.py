@@ -55,7 +55,7 @@ robin_positions_all['updated_at'] = pd.DatetimeIndex(robin_positions_all['update
 
 robin_positions_current = robin_positions_all[robin_positions_all['quantity'] > 0].copy(deep=True)
 quotes = rs.stocks.get_quotes(list(robin_positions_current['ticker']))
-robin_positions_current.loc[:, 'current_price'] = [x['last_extended_hours_trade_price'] for x in quotes]
+robin_positions_current.loc[:, 'current_price'] = [x['last_extended_hours_trade_price'] if x['last_extended_hours_trade_price'] else x['last_trade_price'] for x in quotes]
 robin_positions_current.loc[:, 'current_price'] = robin_positions_current['current_price'].astype('float64')
 robin_positions_current.loc[:, 'equity'] = robin_positions_current['quantity'] * robin_positions_current['current_price']
 print(time.time() - start)

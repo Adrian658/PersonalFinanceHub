@@ -11,7 +11,7 @@ with warnings.catch_warnings():
     import plotly.graph_objs as go
 
 from app import app
-from apps import app1, app2, app3
+from apps import app1, app3, app2
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
@@ -35,7 +35,7 @@ def display_page(pathname):
     elif pathname == '/apps/app2':
         return app2.layout
     elif pathname == '/apps/app3':
-        return app3.layout#return_layout()
+        return app3.layout
     else:
         return '404' + str(pathname)
 
