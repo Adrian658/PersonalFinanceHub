@@ -7,6 +7,7 @@ nav = dbc.Nav(
         dbc.NavItem(dbc.NavLink("App 1", href="/apps/app1")),
         dbc.NavItem(dbc.NavLink("App 2", href="/apps/app2")),
         dbc.NavItem(dbc.NavLink("App 3", href="/apps/app3")),
+        dbc.NavItem(dbc.NavLink("App 4", href="/apps/app4")),
         dbc.NavItem(dbc.NavLink("Active", active=True, href="#")),
         dbc.NavItem(dbc.NavLink("A link", href="#")),
         dbc.NavItem(dbc.NavLink("Disabled", disabled=True, href="#")),

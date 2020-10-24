@@ -17,7 +17,7 @@ import numpy as np
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output
 
-from app import app
+#from app import app
 from shared.navbar import nav
 
 ### Read in data and format appropriately

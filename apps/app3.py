@@ -75,7 +75,7 @@ layout = html.Div(children=[
     # Navbar
     nav,
     # Page title information
-    html.H1(children='Hello Dash'),
+    html.H1(id='Main', children=['Hello Dash']),
     html.Div(children='''Dash: A web application framework for Python.'''),
     # Recommendation graph and corresponding controls
     service_dropdown,
@@ -93,7 +93,8 @@ layout = html.Div(children=[
     # Storage components
     dcc.Store(id='recommendations-df'),
     dcc.Store(id='recommendation-ticker-storage'),
-    dcc.Store(id='recommendation-date-storage')
+    dcc.Store(id='recommendation-date-storage'),
+    dcc.Store(id='date-boundaries')
 ])
 
 ### FUNCTIONS USED INTERNALLY ###
@@ -184,9 +185,9 @@ def create_historical_data_graph(ticker, recommendation_df):
     return historical_price_fig, company
 
 # Finds the triggering element's id
-def find_trigger_id():
+def find_trigger_id(attr=0):
     #print(dash.callback_context.triggered)
-    return dash.callback_context.triggered[0]['prop_id'].split('.')[0]
+    return dash.callback_context.triggered[0]['prop_id'].split('.')[attr]
 
 # Convert html to list of dash components
 def convert_html_to_dash(element):
@@ -208,7 +209,7 @@ def convert_html_to_dash(element):
 # UPDATES: Recommendations (dataframe) stored in browser
 #          Max and current values of recommendation-count-slider
 @app.callback(
-    [Output('recommendations-df', 'data'), Output('recommendation-count-slider', 'max'), Output('recommendation-count-slider', 'value')],
+    Output('recommendations-df', 'data'),
     [Input('service-dropdown', 'value')]
 )
 def update_recommendations_data(collection_name):
@@ -217,13 +218,44 @@ def update_recommendations_data(collection_name):
     collection_data = mongo_query('investment-db', collection_name)
     df = pd.DataFrame(collection_data).drop('_id', axis=1)
     df = df[df['recommend_date'] > '2015-01-01']
-    df = df.sort_values('recommend_date', ascending=False)
+    df.sort_values('recommend_date', ascending=False, inplace=True)
+
+    return df.to_dict('records')
+
+### TRIGGER: Resizing the view range of recommendations-graph
+### OUTPUTS: Update the values of count-slider
+
+@app.callback(
+    [Output('recommendation-count-slider', 'max'), Output('recommendation-count-slider', 'value')],
+    [Input('recommendations-df', 'data')],#Input('recommendations-graph', 'relayoutData'), 
+    [State('recommendation-count-slider', 'value')]
+)
+def test(data, slider_value):
+
+    if not data:
+        print("No data")
+        return no_update, no_update
+
+    df = pd.DataFrame(data)
+    df['recommend_date'] = pd.to_datetime(df['recommend_date'])
+
+    #if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
+    #    df = df[df['recommend_date'].between(relayout_data['xaxis.range[0]'], relayout_data['xaxis.range[1]'])]
+
+    start, end = df.iloc[-1]['recommend_date'], df.iloc[0]['recommend_date']
+    print("Setting: ", start, end)
 
     # Store counts df so as to not recompute when slider is updated?
     counts = df['ticker'].value_counts()
     max_c = max(counts)
+    print(max_c)
 
-    return df.to_dict('records'), max_c, [0, max_c]
+    min_selected = slider_value[0]
+
+    if min_selected >= max_c:
+        min_selected = 1
+    
+    return max_c, [1, max_c]
 
 # TRIGGER: Recommendation dataframe (in browser) is changed or recommendation-count-slider is updated
 # UPDATES: Recommendations displayed on main recommendations-graph
@@ -234,27 +266,73 @@ def update_recommendations_data(collection_name):
     [State('recommendations-graph', 'figure')]
 )
 def update_recommendations_graph(slider_value, data, recommendations_graph):
+    if not data:
+        return no_update, no_update
 
-    # Get current slider values and filter recommendations by count
-    max_selected = slider_value[1]
-    min_selected = slider_value[0]
-    df = filter_counts(pd.DataFrame(data), max_selected, min_selected)
-
-    # Create recommendations figure
-    fig = px.scatter(df, x='recommend_date', y='ticker', color='ticker',
-        title="Motley Fool Recommendations",
-        labels={
-            'promotion': 'Headline: ',
-            'recommend_date': 'Recommended ',
-            'url': 'URL: '
-        },
-        height=800
-    )
-
+    # Transform current json data to df
+    df = pd.DataFrame(data)
+    df['recommend_date'] = pd.to_datetime(df['recommend_date'])
+        
+    # If the slider value is changed don't update the slider, update the figure and the display values
     if find_trigger_id() == 'recommendation-count-slider':
-        fig.layout.xaxis.range = recommendations_graph['layout']['xaxis']['range']
 
-    return fig, 'Number of recommendations  -  Min: %s, Max: %s' % (min_selected, max_selected)
+        # Store min and max of slider selection
+        max_selected = slider_value[1]
+        min_selected = slider_value[0]
+
+        if recommendations_graph:
+            start, end = recommendations_graph['layout']['xaxis']['range'][0], recommendations_graph['layout']['xaxis']['range'][1]
+            df = df[df['recommend_date'].between(start, end)]
+
+        df = filter_counts(df, max_selected, min_selected)
+        print(df.head(), df.tail())
+
+        # Create recommendations figure
+        recommendations_fig = px.scatter(df,
+            x='recommend_date', 
+            y='ticker', 
+            color='ticker',
+            title="Motley Fool Recommendations",
+            labels={
+                'promotion': 'Headline: ',
+                'recommend_date': 'Recommended ',
+                'url': 'URL: '
+            },
+            height=800
+        )
+
+        #start, end = recommendations_fig.layout.xaxis.range[0], recommendations_fig.layout.xaxis.range[-1]
+
+        # When the recommendation slider is updated, and the callback is not creating the initial figure
+        if find_trigger_id() == 'recommendation-count-slider' and recommendations_graph and recommendations_graph['layout']['xaxis']['range']:
+            #recommendations_fig.layout = recommendations_graph['layout']
+            recommendations_fig.layout.xaxis.range = recommendations_graph['layout']['xaxis']['range']
+            #recommendations_fig.layout.yaxis.range = recommendations_graph['layout']['yaxis']['range']
+
+        return recommendations_fig, 'Number of recommendations  -  Min: %s, Max: %s' % (min_selected, max_selected)
+    
+    elif find_trigger_id() == 'recommendations-df':
+
+         # Find the counts of tickers
+        counts = df['ticker'].value_counts()
+        max_c = max(counts)
+        print("3: ", max_c)
+        
+        # Create recommendations figure
+        recommendations_fig = px.scatter(df,
+            x='recommend_date', 
+            y='ticker', 
+            color='ticker',
+            title="Motley Fool Recommendations",
+            labels={
+                'promotion': 'Headline: ',
+                'recommend_date': 'Recommended ',
+                'url': 'URL: '
+            },
+            height=800
+        )
+
+        return recommendations_fig, 'Number of recommendations  -  Min: %s, Max: %s' % (1, max_c)
 
 # TRIGGER: Main recommendation or historical data graph is clicked on
 # UPDATES: Recommendation ticker (in storage) and date (in storage)

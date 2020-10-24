@@ -11,7 +11,8 @@ with warnings.catch_warnings():
     import plotly.graph_objs as go
 
 from app import app
-from apps import app1, app3, app2
+#from apps import app1, app3, app2, app4
+from apps import app4
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
@@ -20,9 +21,10 @@ app.layout = html.Div([
 
 app.validation_layout = html.Div([
     app.layout,
-    app1.layout,
-    app2.layout,
-    app3.layout
+    #app1.layout,
+    #app2.layout,
+    #app3.layout,
+    app4.layout
 ])
 
 @app.callback(Output('page-content', 'children'),
@@ -30,12 +32,14 @@ app.validation_layout = html.Div([
 def display_page(pathname):
     if pathname == '/':
         return app.layout
-    elif pathname == '/apps/app1':
-        return app1.layout
-    elif pathname == '/apps/app2':
-        return app2.layout
-    elif pathname == '/apps/app3':
-        return app3.layout
+    #elif pathname == '/apps/app1':
+    #    return app1.layout
+    #elif pathname == '/apps/app2':
+    #    return app2.layout
+    #elif pathname == '/apps/app3':
+    #    return app3.layout
+    elif pathname == '/apps/app4':
+        return app4.layout
     else:
         return '404' + str(pathname)
 
